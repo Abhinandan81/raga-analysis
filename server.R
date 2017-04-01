@@ -59,7 +59,7 @@ shinyServer(function(input, output){
   
   #------- END: reactive function to detect the file upload change -------#
   
-  output$fileDetails <- renderPlot({
+  output$fileDetails <- renderText({
                wavFile <- getRagaFile()
                
                if(is.null(wavFile)){
@@ -85,7 +85,7 @@ shinyServer(function(input, output){
                  melfc_data_frame <- data.frame(melfc_data)
                  
                  print("-*-*-* melfc_data_frame-**-*-* ")
-                 print(str(melfc_data_frame))
+                 print(glimpse(melfc_data_frame))
                  #--------  END : MFCC feature extraction  -------#
                  
                  #--------  START : Zero crossing rate feature extraction  -------#
@@ -97,7 +97,7 @@ shinyServer(function(input, output){
                  zcr_data_frame <- as.data.frame(zcr_data)
                  
                  print("-*-*-* zcr_data frame-**-*-* ")
-                 print(str(zcr_data_frame))
+                 print(glimpse(zcr_data_frame))
                  #--------  END : Zero crossing rate feature extraction  -------#
                  
                  return(zcr_data)

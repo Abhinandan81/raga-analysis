@@ -10,7 +10,7 @@ shinyUI(fluidPage(
     ),
     
     mainPanel(
-      plotOutput("fileDetails")
+      textOutput("fileDetails")
     )
   )
 ))
