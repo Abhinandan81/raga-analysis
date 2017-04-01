@@ -1,0 +1,10 @@
+name: raga
+title: raga
+account: raga-analysis
+server: shinyapps.io
+appId: 167841
+bundleId: 767043
+url: https://raga-analysis.shinyapps.io/raga/
+when: 1490714595.6474
+asMultiple: FALSE
+asStatic: FALSE

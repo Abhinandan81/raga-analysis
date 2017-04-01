@@ -1,0 +1,21 @@
+{
+    "collab_server" : "",
+    "contents" : "shinyUI(fluidPage(\n  titlePanel(\"Raga Analysis\"),\n  \n  sidebarLayout(\n    sidebarPanel(\n    helpText(\"This application focuses on the RAGA Analysis \"),\n    \n    fileInput('raga_file', 'Choose wav or mp3 file', multiple = FALSE, accept=c('.wav', '.mp3')),\n    tags$hr()\n    ),\n    \n    mainPanel(\n      textOutput(\"fileDetails\")\n    )\n  )\n))\n",
+    "created" : 1490435187773.000,
+    "dirty" : false,
+    "encoding" : "UTF-8",
+    "folds" : "",
+    "hash" : "898656012",
+    "id" : "D7B3CF4B",
+    "lastKnownWriteTime" : 1490443886,
+    "last_content_update" : 1490443886278,
+    "path" : "~/dev/shiny-apps/raga-analysis/ui.R",
+    "project_path" : "ui.R",
+    "properties" : {
+        "tempName" : "Untitled1"
+    },
+    "relative_order" : 1,
+    "source_on_save" : false,
+    "source_window" : "",
+    "type" : "r_source"
+}

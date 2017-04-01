@@ -1,0 +1,21 @@
+{
+    "collab_server" : "",
+    "contents" : "library(shiny)\nlibrary(tools) #for checking file extension\nlibrary(tuneR)\n\n\nshinyServer(function(input, output){\n  \n  #------- START: reactive function to detect the file upload change -------#\n  getRagaFile <- reactive({\n    \n    #storing the uploaded file\n    ragaFile <- input$raga_file\n    \n    print(\"ragaFile\")\n    \n    print(ragaFile)\n    \n    \n    #If recived file is empty return NULL\n    if (is.null(ragaFile)){\n      \n      return(NULL)\n    }else{\n      \n      #validating the file type - application will throw an error if fle type is other than .wav or .mp3\n      validate(\n        need(file_ext(ragaFile$name) %in% c(\n          'wav',\n          'mp3'\n        ), \"Please provide valid .wav or .mp3 file.\"))\n      \n      if(file_ext(ragaFile$name) == \"mp3\"){\n        print(\"---  ---- mp3 -=-=-=  file  ----- - - \")\n        \n        #changing file name in the temporary direcctory\n        file.rename(ragaFile$datapath, paste(ragaFile$datapath, \".mp3\", sep=\"\"))\n        \n        loadedFile <- readMP3(paste(ragaFile$datapath, \".mp3\", sep=\"\"))  ## MP3 file in working directory\n        \n        tdir <- tempdir()\n        tfile <- file.path(tdir, \"wavFile.wav\")\n        writeWave(loadedFile, filename = tfile)\n        \n        newWobj <- readWave(tfile)\n        file.remove(tfile)\n        \n        return(newWobj)\n        \n      }else{\n        \n        print(\"---  ---- wav -=-=-=  file  ----- - - \")\n        \n        \n        #changing file name in the temporary direcctory\n        file.rename(ragaFile$datapath, paste(ragaFile$datapath, \".wav\", sep=\"\"))\n        \n        writeWave(loadedFile, filename = tfile)\n        \n        newWobj <- readWave(paste(ragaFile$datapath, \".wav\", sep=\"\"))\n\n        return(newWobj)\n        \n      }\n    }\n  })\n  \n  #------- END: reactive function to detect the file upload change -------#\n  \n  observeEvent(input$raga_file,{\n               wavFile <- getRagaFile()\n              \n               monoWave <- mono(wavFile, \"left\")\n               \n               print(\" - - - --  Mono wave -- - -\")\n               print(str(monoWave))\n               \n               melfc_data <- melfcc(monoWave, sr = monoWave@samp.rate, wintime = 0.025,\n                      hoptime = 0.01, numcep = 12, lifterexp = 0.6, htklifter = FALSE,\n                      sumpower = TRUE, preemph = 0.97, dither = FALSE, usecmp = FALSE,\n                      modelorder = NULL, spec_out = FALSE, frames_in_rows = TRUE)\n               \n               print(\"-*-*-* melfc_data -**-*-* \")\n               \n               print(str(melfc_data))\n  })\n})",
+    "created" : 1490435212504.000,
+    "dirty" : false,
+    "encoding" : "UTF-8",
+    "folds" : "",
+    "hash" : "4148533940",
+    "id" : "CB93A19C",
+    "lastKnownWriteTime" : 1490510950,
+    "last_content_update" : 1490510950518,
+    "path" : "~/dev/shiny-apps/raga-analysis/server.R",
+    "project_path" : "server.R",
+    "properties" : {
+        "tempName" : "Untitled1"
+    },
+    "relative_order" : 2,
+    "source_on_save" : false,
+    "source_window" : "",
+    "type" : "r_source"
+}
