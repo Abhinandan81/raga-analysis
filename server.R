@@ -100,14 +100,7 @@ shinyServer(function(input, output){
                  print(str(zcr_data_frame))
                  #--------  END : Zero crossing rate feature extraction  -------#
                  
-#                 return(zcr_data)
-                 
-                 dat = data.frame(melfc_data_frame$coef_01, melfc_data_frame$coef_02)
-                 
-                 km1 = kmeans(dat, 2, nstart=100)
-                 
-                 # Plot results
-                 plot(dat, col =(km1$cluster +1) , main="K-Means result with 2 clusters", pch=20, cex=2)
+                 return(zcr_data)
                }
               
   })
