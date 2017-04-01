@@ -5,6 +5,9 @@ library(tuneR)
 library(seewave)
 library(dplyr)
 library(tidyr)
+library(DBI)
+library(RMySQL)
+
 
 
 shinyServer(function(input, output){
@@ -56,7 +59,7 @@ shinyServer(function(input, output){
   
   #------- END: reactive function to detect the file upload change -------#
   
-  output$fileDetails <- renderText({
+  output$fileDetails <- renderPlot({
                wavFile <- getRagaFile()
                
                if(is.null(wavFile)){
@@ -97,7 +100,14 @@ shinyServer(function(input, output){
                  print(str(zcr_data_frame))
                  #--------  END : Zero crossing rate feature extraction  -------#
                  
-                 return(zcr_data)
+#                 return(zcr_data)
+                 
+                 dat = data.frame(melfc_data_frame$coef_01, melfc_data_frame$coef_02)
+                 
+                 km1 = kmeans(dat, 2, nstart=100)
+                 
+                 # Plot results
+                 plot(dat, col =(km1$cluster +1) , main="K-Means result with 2 clusters", pch=20, cex=2)
                }
               
   })
