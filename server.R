@@ -8,9 +8,45 @@ library(tidyr)
 library(DBI)
 library(RMySQL)
 
+options(mysql = list(
+  "host" = "localhost",
+  "port" = 3306,
+  "user" = "root",
+  "password" = ""))
 
+
+conn <- dbConnect(
+  drv = RMySQL::MySQL(),
+  dbname = "ragas",
+  host = "localhost",
+  user = "root",
+  password = "")
+
+databaseName <- "ragas"
+table <- "mfcc_data"
 
 shinyServer(function(input, output){
+  
+  #--------START: Database Initilization -------#
+  
+  # my_db <- src_mysql(
+  #   dbname = "ragas",
+  #   host = "localhost",
+  #   user = "root",
+  #   password = "")
+  # 
+  # conn <- dbConnect(
+  #   drv = RMySQL::MySQL(),
+  #   dbname = "ragas",
+  #   host = "localhost",
+  #   user = "root",
+  #   password = "")
+  # 
+  # q_output <- dbGetQuery(conn, "SELECT * FROM sample LIMIT 1;")
+  # 
+  # print(q_output)
+  
+  #--------END: Database Initilization -------#
   
   #------- START: reactive function to detect the file upload change -------#
   getRagaFile <- reactive({
@@ -42,7 +78,7 @@ shinyServer(function(input, output){
         
         newWobj <- readWave(tfile)
         file.remove(tfile)
-        
+      
         return(newWobj)
         
       }else{
@@ -85,7 +121,11 @@ shinyServer(function(input, output){
                  melfc_data_frame <- data.frame(melfc_data)
                  
                  print("-*-*-* melfc_data_frame-**-*-* ")
-                 print(glimpse(melfc_data_frame))
+                 print(str(melfc_data_frame))
+                 
+                 trimmed_melfc_data_frame <- melfc_data_frame[1:100, ]
+                 
+                 
                  #--------  END : MFCC feature extraction  -------#
                  
                  #--------  START : Zero crossing rate feature extraction  -------#
@@ -97,11 +137,49 @@ shinyServer(function(input, output){
                  zcr_data_frame <- as.data.frame(zcr_data)
                  
                  print("-*-*-* zcr_data frame-**-*-* ")
-                 print(glimpse(zcr_data_frame))
+                 print(str(zcr_data_frame))
+                 
+                 trimmed_melfc_data_frame["id"] <- 1
+                 print("-*-*-* trimmed_melfc_data_frame-**-*-* ")
+                 print(str(trimmed_melfc_data_frame))
+                 saveData(trimmed_melfc_data_frame)
+                 
                  #--------  END : Zero crossing rate feature extraction  -------#
                  
-                 return(zcr_data)
+                return(zcr_data)
+                 
+                 #dat = data.frame(melfc_data_frame$coef_01, melfc_data_frame$coef_03)
+                 
+                 #km1 = kmeans(dat, 5, nstart=100)
+                 
+                 # Plot results
+                 #plot(dat, col =(km1$cluster +1) , main="K-Means result with 2 clusters", pch=20, cex=2)
                }
               
   })
+  
+  saveData <- function(data) {
+    
+    # print("90909090990909")
+    # # Connect to the database
+    # db <- dbConnect(MySQL(), dbname = databaseName, host = options()$mysql$host, 
+    #                 port = options()$mysql$port, user = options()$mysql$user, 
+    #                 password = options()$mysql$password)
+    # # Construct the update query by looping over the data fields
+    # query <- sprintf(
+    #   "INSERT INTO %s (%s) VALUES ('%s')",
+    #   table, 
+    #   paste(names(data), collapse = ", "),
+    #   paste(data, collapse = "', '")
+    #   )
+    
+    dbWriteTable(conn, value = data, name = "mfcc_data", row.names = FALSE, append = TRUE) 
+    
+    
+    # # Submit the update query and disconnect
+    # dbGetQuery(db, query)
+    # dbDisconnect(db)
+  }
+  
+  
 })
