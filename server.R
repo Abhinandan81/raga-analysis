@@ -8,12 +8,9 @@ library(tidyr)
 library(DBI)
 library(RMySQL)
 
-options(mysql = list(
-  "host" = "localhost",
-  "port" = 3306,
-  "user" = "root",
-  "password" = ""))
-
+#----------------------------------------------------------------------------#
+#**********       START: Database Initilization                 *************#
+#----------------------------------------------------------------------------#
 
 conn <- dbConnect(
   drv = RMySQL::MySQL(),
@@ -22,33 +19,17 @@ conn <- dbConnect(
   user = "root",
   password = "")
 
-databaseName <- "ragas"
-table <- "mfcc_data"
+#feature table names
+mfcc_table_name <- "mfcc_data"
+zcr_table_name <- "zcr_data"
+
+#-----------      END: Database Initilization                       ----------#
 
 shinyServer(function(input, output){
-  
-  #--------START: Database Initilization -------#
-  
-  # my_db <- src_mysql(
-  #   dbname = "ragas",
-  #   host = "localhost",
-  #   user = "root",
-  #   password = "")
-  # 
-  # conn <- dbConnect(
-  #   drv = RMySQL::MySQL(),
-  #   dbname = "ragas",
-  #   host = "localhost",
-  #   user = "root",
-  #   password = "")
-  # 
-  # q_output <- dbGetQuery(conn, "SELECT * FROM sample LIMIT 1;")
-  # 
-  # print(q_output)
-  
-  #--------END: Database Initilization -------#
-  
-  #------- START: reactive function to detect the file upload change -------#
+
+  #----------------------------------------------------------------------------#
+  #********* START: reactive function to detect the file upload change ********#
+  #----------------------------------------------------------------------------#
   getRagaFile <- reactive({
     
     #storing the uploaded file
@@ -93,9 +74,14 @@ shinyServer(function(input, output){
     }
   })
   
-  #------- END: reactive function to detect the file upload change -------#
+  #------- END: reactive function to detect the file upload change      -------#
   
-  output$fileDetails <- renderText({
+  
+  #----------------------------------------------------------------------------#
+  #********* START: Process monowave, extract and store features      *********#
+  #----------------------------------------------------------------------------#
+  
+  feature_extraction <- observeEvent(input$raga_file, {
                wavFile <- getRagaFile()
                
                if(is.null(wavFile)){
@@ -104,82 +90,110 @@ shinyServer(function(input, output){
                  
                  #converting sterio channels to mono
                  monoWave <- mono(wavFile, "left")
-              
-                 #--------  START : MFCC feature extraction  -------#
-                 melfc_data <- melfcc(monoWave, sr = monoWave@samp.rate, wintime = 0.025,
-                                      hoptime = 0.01, numcep = 12, lifterexp = 0.6, htklifter = FALSE,
-                                      sumpower = TRUE, preemph = 0.97, dither = FALSE, usecmp = FALSE,
-                                      modelorder = NULL, spec_out = FALSE, frames_in_rows = TRUE)
+            
+                 #getting the max id
+                 raga_counter <- dbGetQuery(conn, "SELECT MAX(id) as counter FROM mfcc_data")
                  
-                 #defining column names for the melfc_data
-                 melfc_data_colname <- c("coef_01", "coef_02", "coef_03", "coef_04", "coef_05", "coef_06", "coef_07", "coef_08", "coef_09", "coef_10", "coef_11", "coef_12")
-
-                 #assigning the column names to the melfc_data
-                 colnames(melfc_data) <-  melfc_data_colname                
+                 if(is.na(raga_counter$counter)){
+                   raga_counter <- 1
+                 }else{
+                   raga_counter <- (raga_counter$counter + 1)
+                 }
                  
-                 #convert melfc_data vetor to the melfc_data_frame
-                 melfc_data_frame <- data.frame(melfc_data)
+                 #--------  START : MFCC feature extraction  --------------------#
                  
-                 print("-*-*-* melfc_data_frame-**-*-* ")
-                 print(str(melfc_data_frame))
+                 trimmed_melfc_data_frame <- mfcc_feature_processing(monoWave, raga_counter)
                  
-                 trimmed_melfc_data_frame <- melfc_data_frame[1:100, ]
+                 if(raga_counter < 15){
+                   saveData(trimmed_melfc_data_frame, mfcc_table_name)
+                 }
                  
-                 
-                 #--------  END : MFCC feature extraction  -------#
+                 #--------  END : MFCC feature extraction  -----------------------#
                  
                  #--------  START : Zero crossing rate feature extraction  -------#
+          
+                 trimmed_zcr_data_frame <- zcr_feature_processing(monoWave, raga_counter)
                  
-                 #extracting the Zero crossing rate feature
-                 zcr_data <- zcr(monoWave, wl = 512, ovlp = 0, plot = FALSE)
+                 print("trimmed_zcr_data_frame")
                  
-                 #converting the zcr_data matrix to the data frame(data frame is having two columns: time and zcr)
-                 zcr_data_frame <- as.data.frame(zcr_data)
+                 print(glimpse(trimmed_zcr_data_frame))
                  
-                 print("-*-*-* zcr_data frame-**-*-* ")
-                 print(str(zcr_data_frame))
-                 
-                 trimmed_melfc_data_frame["id"] <- 1
-                 print("-*-*-* trimmed_melfc_data_frame-**-*-* ")
-                 print(str(trimmed_melfc_data_frame))
-                 saveData(trimmed_melfc_data_frame)
+                 if(raga_counter < 15){
+                   saveData(trimmed_zcr_data_frame, zcr_table_name)
+                 }
                  
                  #--------  END : Zero crossing rate feature extraction  -------#
-                 
-                return(zcr_data)
-                 
-                 #dat = data.frame(melfc_data_frame$coef_01, melfc_data_frame$coef_03)
-                 
-                 #km1 = kmeans(dat, 5, nstart=100)
-                 
-                 # Plot results
-                 #plot(dat, col =(km1$cluster +1) , main="K-Means result with 2 clusters", pch=20, cex=2)
                }
-              
   })
   
-  saveData <- function(data) {
+  #----------- END: Process monowave, extract and store features --------------#
+  
+  
+  #----------------------------------------------------------------------------#
+  #********* START: Function to store the MFCC feature data           *********#
+  #----------------------------------------------------------------------------#
+  
+  mfcc_feature_processing <- function(raga_mono_wave, counter){
     
-    # print("90909090990909")
-    # # Connect to the database
-    # db <- dbConnect(MySQL(), dbname = databaseName, host = options()$mysql$host, 
-    #                 port = options()$mysql$port, user = options()$mysql$user, 
-    #                 password = options()$mysql$password)
-    # # Construct the update query by looping over the data fields
-    # query <- sprintf(
-    #   "INSERT INTO %s (%s) VALUES ('%s')",
-    #   table, 
-    #   paste(names(data), collapse = ", "),
-    #   paste(data, collapse = "', '")
-    #   )
+    melfc_data <- melfcc(raga_mono_wave, sr = raga_mono_wave@samp.rate, wintime = 0.025,
+                         hoptime = 0.01, numcep = 12, lifterexp = 0.6, htklifter = FALSE,
+                         sumpower = TRUE, preemph = 0.97, dither = FALSE, usecmp = FALSE,
+                         modelorder = NULL, spec_out = FALSE, frames_in_rows = TRUE)
     
-    dbWriteTable(conn, value = data, name = "mfcc_data", row.names = FALSE, append = TRUE) 
+    #defining column names for the melfc_data
+    melfc_data_colname <- c("coef_01", "coef_02", "coef_03", "coef_04", "coef_05", "coef_06", "coef_07", "coef_08", "coef_09", "coef_10", "coef_11", "coef_12")
     
+    #assigning the column names to the melfc_data
+    colnames(melfc_data) <-  melfc_data_colname                
     
-    # # Submit the update query and disconnect
-    # dbGetQuery(db, query)
-    # dbDisconnect(db)
+    #convert melfc_data vetor to the melfc_data_frame
+    melfc_data_frame <- data.frame(melfc_data)
+    
+    trimmed_melfc_data_frame <- melfc_data_frame[1:100, ]
+    
+    trimmed_melfc_data_frame["id"] <- counter
+    
+    return(trimmed_melfc_data_frame)
   }
+  
+  #----------- END: Function to store the MFCC feature data -------------------#
+  
+  
+  
+  #----------------------------------------------------------------------------#
+  #*********  START: Extract and store the ZCR feature data         ***********#
+  #----------------------------------------------------------------------------#
+  
+    zcr_feature_processing <- function(raga_mono_wave, counter){
+    
+    #extracting the Zero crossing rate feature
+    zcr_data <- zcr(raga_mono_wave, wl = 512, ovlp = 0, plot = FALSE)
+    
+    #converting the zcr_data matrix to the data frame(data frame is having two columns: time and zcr)
+    zcr_data_frame <- as.data.frame(zcr_data)
+    
+    trimmed_zcr_data_frame <- zcr_data_frame[1:100, ]
+    
+    trimmed_zcr_data_frame["id"] <- counter
+    
+    return(trimmed_zcr_data_frame)
+    
+  }
+  
+  
+  #********* END: Extract and store the ZCR feature data *************#
+  
+  
+  #----------------------------------------------------------------------------#
+  #*********  START: Storing extracted features to the database       *********#
+  #----------------------------------------------------------------------------#
+  
+  saveData <- function(data, table_name) {
+        dbWriteTable(conn, value = data, name = table_name, row.names = FALSE, append = TRUE)
+  }
+  
+  #********* END: Storing extracted features to the database ***********#
+  
   
   
 })
