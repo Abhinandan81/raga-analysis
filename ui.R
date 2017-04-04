@@ -10,7 +10,8 @@ shinyUI(fluidPage(
     ),
     
     mainPanel(
-      textOutput("fileDetails")
+      plotOutput("mfcc_plot"),
+      plotOutput("zcr_plot")
     )
   )
 ))

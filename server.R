@@ -30,7 +30,7 @@ shinyServer(function(input, output){
   #----------------------------------------------------------------------------#
   #********* START: reactive function to detect the file upload change ********#
   #----------------------------------------------------------------------------#
-  getRagaFile <- reactive({
+  getMonoWaveFromRagaFile <- reactive({
     
     #storing the uploaded file
     ragaFile <- input$raga_file
@@ -60,37 +60,40 @@ shinyServer(function(input, output){
         newWobj <- readWave(tfile)
         file.remove(tfile)
       
-        return(newWobj)
+        #converting sterio channels to mono
+        monoWave <- mono(newWobj, "left")
         
+        return(monoWave)
       }else{
         #changing file name in the temporary direcctory
         file.rename(ragaFile$datapath, paste(ragaFile$datapath, ".wav", sep=""))
         
         newWobj <- readWave(paste(ragaFile$datapath, ".wav", sep=""))
-
-        return(newWobj)
         
+        #converting sterio channels to mono
+        monoWave <- mono(newWobj, "left")
+
+        return(monoWave)
       }
     }
   })
-  
   #------- END: reactive function to detect the file upload change      -------#
+  
+  
   
   
   #----------------------------------------------------------------------------#
   #********* START: Process monowave, extract and store features      *********#
   #----------------------------------------------------------------------------#
   
-  feature_extraction <- observeEvent(input$raga_file, {
-               wavFile <- getRagaFile()
+  output$mfcc_plot <- renderPlot({
+    
+    monoWave <- getMonoWaveFromRagaFile()
+    
                
-               if(is.null(wavFile)){
+               if(is.null(monoWave)){
                  return(NULL)
                }else{
-                 
-                 #converting sterio channels to mono
-                 monoWave <- mono(wavFile, "left")
-            
                  #getting the max id
                  raga_counter <- dbGetQuery(conn, "SELECT MAX(id) as counter FROM mfcc_data")
                  
@@ -102,38 +105,99 @@ shinyServer(function(input, output){
                  
                  #--------  START : MFCC feature extraction  --------------------#
                  
-                 trimmed_melfc_data_frame <- mfcc_feature_processing(monoWave, raga_counter)
+                 #fetching the existing mfcc features data
+                 existing_mfcc_feature_data <- fetchFetureData(mfcc_table_name)
+                 
+                 #collecting MFCC features of the newly uploaded file
+                 new_melfc_data_frame <- mfccFeatureProcessing(monoWave)
+                 
+                 #combining existing_mfcc_feature_data and new_melfc_data_frame
+                 combined_mfcc_features <- bind_rows(existing_mfcc_feature_data, new_melfc_data_frame)
                  
                  if(raga_counter < 15){
-                   saveData(trimmed_melfc_data_frame, mfcc_table_name)
+                   #adding id column to the dataframe, so that data frame can be stored directly to the database
+                   new_melfc_data_frame["id"] <- raga_counter
+                   saveData(new_melfc_data_frame, mfcc_table_name)
                  }
-                 
+  
                  #--------  END : MFCC feature extraction  -----------------------#
                  
-                 #--------  START : Zero crossing rate feature extraction  -------#
-          
-                 trimmed_zcr_data_frame <- zcr_feature_processing(monoWave, raga_counter)
+                 dat = data.frame(combined_mfcc_features$coef_01, combined_mfcc_features$coef_02)
                  
-                 print("trimmed_zcr_data_frame")
+                 formated_data_frame <- na.omit(dat)
+                 km1 = kmeans(formated_data_frame, 5, nstart=100)
                  
-                 print(glimpse(trimmed_zcr_data_frame))
-                 
-                 if(raga_counter < 15){
-                   saveData(trimmed_zcr_data_frame, zcr_table_name)
-                 }
-                 
-                 #--------  END : Zero crossing rate feature extraction  -------#
+                 # Plot results
+                 plot(formated_data_frame, col =(km1$cluster +1) , main="K-Means result with 2 clusters", pch=20, cex=2)
+                
                }
   })
-  
   #----------- END: Process monowave, extract and store features --------------#
+  
+  
+  
+  
+  
+  #----------------------------------------------------------------------------#
+  #********* START: Process monowave, extract and store features      *********#
+  #----------------------------------------------------------------------------#
+  
+  output$zcr_plot <- renderPlot({
+    monoWave <- getMonoWaveFromRagaFile()
+    
+    if(is.null(monoWave)){
+      return(NULL)
+    }else{
+      
+      #getting the max id
+      raga_counter <- dbGetQuery(conn, "SELECT MAX(id) as counter FROM zcr_data")
+      
+      if(is.na(raga_counter$counter)){
+        raga_counter <- 1
+      }else{
+        raga_counter <- (raga_counter$counter + 1)
+      }
+      
+      #--------  START : Zero crossing rate feature extraction  -------#
+      
+      #fetching the existing mfcc features data
+      existing_zcr_feature_data <- fetchFetureData(zcr_table_name)
+      
+      #collecting MFCC features of the newly uploaded file
+      new_zcr_data_frame <- zcrFeatureProcessing(monoWave)
+      
+      #combining existing_mfcc_feature_data and new_melfc_data_frame
+      combined_zcr_features <- bind_rows(existing_zcr_feature_data, new_zcr_data_frame)
+      
+      if(raga_counter < 5){
+        #adding id column to the dataframe, so that data frame can be stored directly to the database
+        new_zcr_data_frame["id"] <- raga_counter
+        saveData(new_zcr_data_frame, zcr_table_name)
+      }
+      
+      #--------  END : Zero crossing rate feature extraction  -------#
+      
+      dat = data.frame(combined_zcr_features$time, combined_zcr_features$zcr)
+      
+      formated_data_frame <- na.omit(dat)
+      km1 = kmeans(formated_data_frame, 5, nstart=100)
+      
+      # Plot results
+      plot(formated_data_frame, col =(km1$cluster +1) , main="K-Means result with 2 clusters", pch=20, cex=2)
+      
+    }
+  })
+  #----------- END: Process monowave, extract and store features --------------#
+  
+  
+  
   
   
   #----------------------------------------------------------------------------#
   #********* START: Function to store the MFCC feature data           *********#
   #----------------------------------------------------------------------------#
   
-  mfcc_feature_processing <- function(raga_mono_wave, counter){
+    mfccFeatureProcessing <- function(raga_mono_wave){
     
     melfc_data <- melfcc(raga_mono_wave, sr = raga_mono_wave@samp.rate, wintime = 0.025,
                          hoptime = 0.01, numcep = 12, lifterexp = 0.6, htklifter = FALSE,
@@ -151,20 +215,19 @@ shinyServer(function(input, output){
     
     trimmed_melfc_data_frame <- melfc_data_frame[1:100, ]
     
-    trimmed_melfc_data_frame["id"] <- counter
-    
     return(trimmed_melfc_data_frame)
   }
-  
   #----------- END: Function to store the MFCC feature data -------------------#
   
+    
+    
   
   
   #----------------------------------------------------------------------------#
   #*********  START: Extract and store the ZCR feature data         ***********#
   #----------------------------------------------------------------------------#
   
-    zcr_feature_processing <- function(raga_mono_wave, counter){
+    zcrFeatureProcessing <- function(raga_mono_wave){
     
     #extracting the Zero crossing rate feature
     zcr_data <- zcr(raga_mono_wave, wl = 512, ovlp = 0, plot = FALSE)
@@ -174,15 +237,12 @@ shinyServer(function(input, output){
     
     trimmed_zcr_data_frame <- zcr_data_frame[1:100, ]
     
-    trimmed_zcr_data_frame["id"] <- counter
-    
     return(trimmed_zcr_data_frame)
+    }
+  #********* END: Extract and store the ZCR feature data          *************#
+  
     
-  }
-  
-  
-  #********* END: Extract and store the ZCR feature data *************#
-  
+    
   
   #----------------------------------------------------------------------------#
   #*********  START: Storing extracted features to the database       *********#
@@ -191,9 +251,26 @@ shinyServer(function(input, output){
   saveData <- function(data, table_name) {
         dbWriteTable(conn, value = data, name = table_name, row.names = FALSE, append = TRUE)
   }
+  #********* END: Storing extracted features to the database          ********#
   
-  #********* END: Storing extracted features to the database ***********#
   
+  
+  
+  #----------------------------------------------------------------------------#
+  #*********  START: Feature extraction from the database       *********#
+  #----------------------------------------------------------------------------#
+  
+  fetchFetureData <- function(table_name){
+    
+    #fetching all the data for the given feature
+    features_data <- dbGetQuery(conn, paste0("SELECT * FROM ", table_name, ";"))
+
+    #removing id field from the data frame
+    trimmed_features_data <- select(features_data, -id)
+    
+    return(trimmed_features_data)
+  }
+  #********* END: Feature extraction from the database                ********#
   
   
 })
