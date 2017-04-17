@@ -7,6 +7,10 @@ library(dplyr)
 library(tidyr)
 library(DBI)
 library(RMySQL)
+library(ggplot2)
+library(reshape2)
+library(psych)
+
 
 #----------------------------------------------------------------------------#
 #**********       START: Database Initilization                 *************#
@@ -34,7 +38,7 @@ shinyServer(function(input, output){
     
     #storing the uploaded file
     ragaFile <- input$raga_file
-    
+
     #If recived file is empty return NULL
     if (is.null(ragaFile)){
       return(NULL)
@@ -89,11 +93,11 @@ shinyServer(function(input, output){
   output$mfcc_plot <- renderPlot({
     
     monoWave <- getMonoWaveFromRagaFile()
-    
-               
+
                if(is.null(monoWave)){
                  return(NULL)
                }else{
+              
                  #getting the max id
                  raga_counter <- dbGetQuery(conn, "SELECT MAX(id) as counter FROM mfcc_data")
                  
@@ -111,24 +115,84 @@ shinyServer(function(input, output){
                  #collecting MFCC features of the newly uploaded file
                  new_melfc_data_frame <- mfccFeatureProcessing(monoWave)
                  
-                 #combining existing_mfcc_feature_data and new_melfc_data_frame
-                 combined_mfcc_features <- bind_rows(existing_mfcc_feature_data, new_melfc_data_frame)
+                 new_melfc_data_frame["raga_file_name"] <- isolate(input$raga_file$name)
+                 minimized_melfc_data_frame <- new_melfc_data_frame %>% group_by(raga_file_name) %>% 
+                   summarise(coef_01 =  mean(coef_01, na.rm = TRUE),
+                             coef_02 =  mean(coef_02, na.rm = TRUE),
+                             coef_03 =  mean(coef_03, na.rm = TRUE),
+                             coef_04 =  mean(coef_04, na.rm = TRUE),
+                             coef_05 =  mean(coef_05, na.rm = TRUE),
+                             coef_06 =  mean(coef_06, na.rm = TRUE),
+                             coef_07 =  mean(coef_07, na.rm = TRUE),
+                             coef_08 =  mean(coef_08, na.rm = TRUE),
+                             coef_09 =  mean(coef_09, na.rm = TRUE),
+                             coef_10 =  mean(coef_10, na.rm = TRUE),
+                             coef_11 =  mean(coef_11, na.rm = TRUE),
+                             coef_12 =  mean(coef_12, na.rm = TRUE))
                  
-                 if(raga_counter < 15){
+                 #combining existing_mfcc_feature_data and new_melfc_data_frame
+                 combined_mfcc_features <- bind_rows(existing_mfcc_feature_data, minimized_melfc_data_frame)
+                 
+                 if(raga_counter <= 15){
                    #adding id column to the dataframe, so that data frame can be stored directly to the database
-                   new_melfc_data_frame["id"] <- raga_counter
-                   saveData(new_melfc_data_frame, mfcc_table_name)
+                   minimized_melfc_data_frame["id"] <- raga_counter
+                   
+                   saveData(minimized_melfc_data_frame, mfcc_table_name)
                  }
   
                  #--------  END : MFCC feature extraction  -----------------------#
                  
-                 dat = data.frame(combined_mfcc_features$coef_01, combined_mfcc_features$coef_02)
+                 dat = data.frame(combined_mfcc_features)
                  
                  formated_data_frame <- na.omit(dat)
-                 km1 = kmeans(formated_data_frame, 5, nstart=100)
+                 
+                 back_df <- formated_data_frame
+                 
+                 formated_data_frame <-  select(formated_data_frame, -raga_file_name)
+                 
+                 km1 = kmeans(formated_data_frame, input$number_of_clusters, nstart=2)
+                 
+         
+                 
+                 #back_df$cluster <- as.factor(km1$cluster)
+                 
+                 #factor
+                 tmp_f = fa(formated_data_frame, 2, rotate = "none")
+                 
+                 print("tmp_f$scores")
+                 print(tmp_f$scores)
+                 
+                 print("==================================")
+                 print("formated_data_frame")
+                 print(formated_data_frame)
+                 
+                 print("back_df")
+                 print(back_df$raga_file_name)
+                 
+                 #collect data
+                 tmp_d = data.frame(matrix(ncol=0, nrow=nrow(formated_data_frame)))
+                 tmp_d$cluster = as.factor(km1$cluster)
+                 tmp_d$fact_1 = as.numeric(tmp_f$scores[, 1])
+                 tmp_d$fact_2 = as.numeric(tmp_f$scores[, 2])
+                 tmp_d$label = back_df$raga_file_name
+                 
+                 ggplot(tmp_d, aes(fact_1, fact_2, color = cluster)) + geom_point() + geom_text(aes(label = label), size = 3, vjust = 1, color = "black")
+                 
+                 #ggplot(melt(back_df, id.vars = "raga_file_name"), aes(value, variable, colour = raga_file_name)) + 
+                   #geom_point() + geom_text(aes(label = raga_file_name), size = 1, vjust = 1, color = "white")
+                 
+               #  ggplot(melt(back_df, id.vars = "raga_file_name"), aes(value, variable, colour = raga_file_name)) + 
+                  # geom_point()
+                 
+                # ggplot(tmp_d, aes(fact_1, fact_2, color = cluster)) + geom_point() + 
+                 #  geom_text(aes(label = raga_file_name), size = 3, vjust = 1, color = "black")
+                 
+                 #ggplot(formated_data_frame, aes(coef_01, coef_02, coef_03, 
+                 #coef_04, coef_05, coef_06, coef_07, coef_08, coef_09, coef_10, 
+                 #coef_11, coef_12, color = km1$cluster)) + geom_point()
                  
                  # Plot results
-                 plot(formated_data_frame, col =(km1$cluster +1) , main="K-Means result with 2 clusters", pch=20, cex=2)
+                 #plot(formated_data_frame, col =(km1$cluster) , main="K-Means result with 2 clusters", pch=20, cex=2)
                 
                }
   })
@@ -172,6 +236,7 @@ shinyServer(function(input, output){
       if(raga_counter < 5){
         #adding id column to the dataframe, so that data frame can be stored directly to the database
         new_zcr_data_frame["id"] <- raga_counter
+        new_zcr_data_frame["raga_file_name"] <- isolate(input$raga_file$name)
         saveData(new_zcr_data_frame, zcr_table_name)
       }
       
@@ -215,7 +280,7 @@ shinyServer(function(input, output){
     
     trimmed_melfc_data_frame <- melfc_data_frame[1:100, ]
     
-    return(trimmed_melfc_data_frame)
+    return(melfc_data_frame)
   }
   #----------- END: Function to store the MFCC feature data -------------------#
   
@@ -271,6 +336,4 @@ shinyServer(function(input, output){
     return(trimmed_features_data)
   }
   #********* END: Feature extraction from the database                ********#
-  
-  
 })
