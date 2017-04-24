@@ -83,17 +83,47 @@ shinyServer(function(input, output){
   })
   #------- END: reactive function to detect the file upload change      -------#
   
-  
+  output$mfcc_plot <- renderPlot({
+    monoWave <- getMonoWaveFromRagaFile()
+    
+    if(is.null(monoWave)){
+      return(NULL)
+    }else{
+      formated_data_frame <-  mfcc_feature_data(monoWave)
+
+      zcr_data_frame <- zcr_data_processing(monoWave)
+
+      binded_data <- cbind(formated_data_frame, zcr_data_frame)
+      binded_data <- na.omit(binded_data)
+      
+      raga_file_names <- select(binded_data, raga_file_name)
+      binded_data <- select(binded_data, -raga_file_name)
+
+      km1 = kmeans(binded_data, input$number_of_clusters, nstart=2)
+      
+      #factor
+      tmp_f = fa(binded_data, 2, rotate = "none")
+      
+      #collect data
+      tmp_d = data.frame(matrix(ncol=0, nrow=nrow(binded_data)))
+      tmp_d$cluster = as.factor(km1$cluster)
+      tmp_d$fact_1 = as.numeric(tmp_f$scores[, 1])
+      tmp_d$fact_2 = as.numeric(tmp_f$scores[, 2])
+      tmp_d$label = raga_file_names$raga_file_name
+      
+      ggplot(tmp_d, aes(fact_1, fact_2, color = cluster)) + geom_point() + geom_text(aes(label = label), size = 5, vjust = 2, color = "black")
+      
+    }
+    
+  })
   
   
   #----------------------------------------------------------------------------#
   #********* START: Process monowave, extract and store features      *********#
   #----------------------------------------------------------------------------#
   
-  output$mfcc_plot <- renderPlot({
+  mfcc_feature_data <- function(monoWave){
     
-    monoWave <- getMonoWaveFromRagaFile()
-
                if(is.null(monoWave)){
                  return(NULL)
                }else{
@@ -116,6 +146,7 @@ shinyServer(function(input, output){
                  new_melfc_data_frame <- mfccFeatureProcessing(monoWave)
                  
                  new_melfc_data_frame["raga_file_name"] <- isolate(input$raga_file$name)
+                 
                  minimized_melfc_data_frame <- new_melfc_data_frame %>% group_by(raga_file_name) %>% 
                    summarise(coef_01 =  mean(coef_01, na.rm = TRUE),
                              coef_02 =  mean(coef_02, na.rm = TRUE),
@@ -143,72 +174,18 @@ shinyServer(function(input, output){
                  #--------  END : MFCC feature extraction  -----------------------#
                  
                  dat = data.frame(combined_mfcc_features)
-                 
-                 formated_data_frame <- na.omit(dat)
-                 
-                 back_df <- formated_data_frame
-                 
-                 formated_data_frame <-  select(formated_data_frame, -raga_file_name)
-                 
-                 km1 = kmeans(formated_data_frame, input$number_of_clusters, nstart=2)
-                 
-         
-                 
-                 #back_df$cluster <- as.factor(km1$cluster)
-                 
-                 #factor
-                 tmp_f = fa(formated_data_frame, 2, rotate = "none")
-                 
-                 print("tmp_f$scores")
-                 print(tmp_f$scores)
-                 
-                 print("==================================")
-                 print("formated_data_frame")
-                 print(formated_data_frame)
-                 
-                 print("back_df")
-                 print(back_df$raga_file_name)
-                 
-                 #collect data
-                 tmp_d = data.frame(matrix(ncol=0, nrow=nrow(formated_data_frame)))
-                 tmp_d$cluster = as.factor(km1$cluster)
-                 tmp_d$fact_1 = as.numeric(tmp_f$scores[, 1])
-                 tmp_d$fact_2 = as.numeric(tmp_f$scores[, 2])
-                 tmp_d$label = back_df$raga_file_name
-                 
-                 ggplot(tmp_d, aes(fact_1, fact_2, color = cluster)) + geom_point() + geom_text(aes(label = label), size = 3, vjust = 1, color = "black")
-                 
-                 #ggplot(melt(back_df, id.vars = "raga_file_name"), aes(value, variable, colour = raga_file_name)) + 
-                   #geom_point() + geom_text(aes(label = raga_file_name), size = 1, vjust = 1, color = "white")
-                 
-               #  ggplot(melt(back_df, id.vars = "raga_file_name"), aes(value, variable, colour = raga_file_name)) + 
-                  # geom_point()
-                 
-                # ggplot(tmp_d, aes(fact_1, fact_2, color = cluster)) + geom_point() + 
-                 #  geom_text(aes(label = raga_file_name), size = 3, vjust = 1, color = "black")
-                 
-                 #ggplot(formated_data_frame, aes(coef_01, coef_02, coef_03, 
-                 #coef_04, coef_05, coef_06, coef_07, coef_08, coef_09, coef_10, 
-                 #coef_11, coef_12, color = km1$cluster)) + geom_point()
-                 
-                 # Plot results
-                 #plot(formated_data_frame, col =(km1$cluster) , main="K-Means result with 2 clusters", pch=20, cex=2)
-                
+                return(dat)
                }
-  })
+  }
   #----------- END: Process monowave, extract and store features --------------#
-  
-  
-  
   
   
   #----------------------------------------------------------------------------#
   #********* START: Process monowave, extract and store features      *********#
   #----------------------------------------------------------------------------#
   
-  output$zcr_plot <- renderPlot({
-    monoWave <- getMonoWaveFromRagaFile()
-    
+  zcr_data_processing <- function(monoWave){
+
     if(is.null(monoWave)){
       return(NULL)
     }else{
@@ -230,28 +207,26 @@ shinyServer(function(input, output){
       #collecting MFCC features of the newly uploaded file
       new_zcr_data_frame <- zcrFeatureProcessing(monoWave)
       
+      new_zcr_data_frame["raga_file_name"] <- isolate(input$raga_file$name)
+      
+      new_zcr_data_frame <- new_zcr_data_frame %>% group_by(raga_file_name) %>% 
+        summarise(zcr =  mean(zcr, na.rm = TRUE))
+
       #combining existing_mfcc_feature_data and new_melfc_data_frame
       combined_zcr_features <- bind_rows(existing_zcr_feature_data, new_zcr_data_frame)
       
       if(raga_counter < 5){
         #adding id column to the dataframe, so that data frame can be stored directly to the database
         new_zcr_data_frame["id"] <- raga_counter
-        new_zcr_data_frame["raga_file_name"] <- isolate(input$raga_file$name)
         saveData(new_zcr_data_frame, zcr_table_name)
       }
       
       #--------  END : Zero crossing rate feature extraction  -------#
       
-      dat = data.frame(combined_zcr_features$time, combined_zcr_features$zcr)
-      
-      formated_data_frame <- na.omit(dat)
-      km1 = kmeans(formated_data_frame, 5, nstart=100)
-      
-      # Plot results
-      plot(formated_data_frame, col =(km1$cluster +1) , main="K-Means result with 2 clusters", pch=20, cex=2)
-      
+      dat = data.frame(combined_zcr_features)
+      formated_data_frame <- select(dat, -raga_file_name)
     }
-  })
+  }
   #----------- END: Process monowave, extract and store features --------------#
   
   
@@ -278,8 +253,6 @@ shinyServer(function(input, output){
     #convert melfc_data vetor to the melfc_data_frame
     melfc_data_frame <- data.frame(melfc_data)
     
-    trimmed_melfc_data_frame <- melfc_data_frame[1:100, ]
-    
     return(melfc_data_frame)
   }
   #----------- END: Function to store the MFCC feature data -------------------#
@@ -300,9 +273,7 @@ shinyServer(function(input, output){
     #converting the zcr_data matrix to the data frame(data frame is having two columns: time and zcr)
     zcr_data_frame <- as.data.frame(zcr_data)
     
-    trimmed_zcr_data_frame <- zcr_data_frame[1:100, ]
-    
-    return(trimmed_zcr_data_frame)
+    return(zcr_data_frame)
     }
   #********* END: Extract and store the ZCR feature data          *************#
   
