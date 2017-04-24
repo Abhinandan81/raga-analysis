@@ -7,11 +7,11 @@ shinyUI(fluidPage(
     
     fileInput('raga_file', 'Choose wav or mp3 file', multiple = FALSE, accept=c('.wav', '.mp3')),
     tags$hr(),
-    sliderInput("number_of_clusters", "Number of clusters", 2, 5,2,1)
+    sliderInput("number_of_clusters", "Number of clusters", 1, 5,1,1)
     ),
     
     mainPanel(
-      plotOutput("mfcc_plot")
+      plotOutput("kmeansPlot")
     )
   )
 ))
