@@ -12,6 +12,7 @@ library(reshape2)
 library(psych)
 
 
+
 #----------------------------------------------------------------------------#
 #**********       START: Database Initilization                 *************#
 #----------------------------------------------------------------------------#
@@ -25,13 +26,13 @@ conn <- dbConnect(
 )
 
 #feature table names
-mfcc_table_name <- "mfcc_data"
-zcr_table_name <- "zcr_data"
 features_data_table <- "features_data"
+cluster_table_data_frame <- data.frame()
 
 #-----------      END: Database Initilization                       ----------#
 
 shinyServer(function(input, output) {
+  
   #----------------------------------------------------------------------------#
   #********* START: reactive function to detect the file upload change ********#
   #----------------------------------------------------------------------------#
@@ -41,7 +42,7 @@ shinyServer(function(input, output) {
     
     #If recived file is empty return NULL
     if (is.null(ragaFile)) {
-      return(NULL)
+      return(list("feature_data_frame" = NULL, "raga_counter" = 0))
     } else{
       #validating the file type - application will throw an error if fle type is other than .wav or .mp3
       validate(need(
@@ -49,6 +50,15 @@ shinyServer(function(input, output) {
                                        'mp3'),
         "Please provide valid .wav or .mp3 file."
       ))
+      
+      #get the raga counter
+      raga_counter <- dbGetQuery(conn, "SELECT MAX(id) as counter FROM features_data")
+      
+      if (is.na(raga_counter$counter)) {
+        raga_counter <- 1
+      } else{
+        raga_counter <- (raga_counter$counter + 1)
+      }
       
       if (file_ext(ragaFile$name) == "mp3") {
         #changing file name in the temporary direcctory
@@ -67,8 +77,12 @@ shinyServer(function(input, output) {
         
         #converting sterio channels to mono
         monoWave <- mono(newWobj, "left")
+
+        #fetching the features data
+        feature_data_frame <-
+          featureExtractionAndTransformation(monoWave, raga_counter)
         
-        return(monoWave)
+        return(list("feature_data_frame" = feature_data_frame, "raga_counter" = raga_counter))
       } else{
         #changing file name in the temporary direcctory
         file.rename(ragaFile$datapath,
@@ -79,57 +93,142 @@ shinyServer(function(input, output) {
         
         #converting sterio channels to mono
         monoWave <- mono(newWobj, "left")
+
+        #fetching the features data
+        feature_data_frame <-
+          featureExtractionAndTransformation(monoWave, raga_counter)
         
-        return(monoWave)
+        return(list("feature_data_frame" = feature_data_frame, "raga_counter" = raga_counter))
       }
     }
   })
   #------- END: reactive function to detect the file upload change      -------#
   
+  output$kmeansPlot <- renderPlot({
+    factored_data_frame <- dataProcessingAndTransformation()
+
+    if(is.null(factored_data_frame)){
+      return(NULL)
+    }else{
+      #plotting the clustring graph
+      ggplot(factored_data_frame,
+             aes(factor_1, factor_2, color = cluster)) + geom_point() + geom_text(
+               aes(label = label),
+               size = 3,
+               vjust = 0,
+               hjust = 1,
+               color = "black"
+             )
+    }
+  })
+  
   #----------------------------------------------------------------------------#
   #*********              START: K-means rendering                    *********#
   #----------------------------------------------------------------------------#
-  output$kmeansPlot <- renderPlot({
-    monoWave <- getMonoWaveFromRagaFile()
+  dataProcessingAndTransformation <- reactive({
+    #getting processed_feature_data_frame
+    processed_feature_data_frame <- getMonoWaveFromRagaFile()
     
-    if (is.null(monoWave)) {
+    feature_data_frame <- processed_feature_data_frame$feature_data_frame
+    raga_counter <-processed_feature_data_frame$raga_counter
+    
+    if (is.null(feature_data_frame)) {
+      
+      if(raga_counter !=0 ){
+        showModal(
+          modalDialog(
+            title = "No data found",
+            "No data has been collected after the Raga file processing. Please verify file.",
+            easyClose = TRUE
+          )
+        )
+      }
+      
       return(NULL)
     } else{
-      feature_data_frame <- featureExtractionAndTransformation(monoWave)
       
+      if(raga_counter <= input$number_of_clusters){
+        
+        if(raga_counter == 1){
+          showModal(
+            modalDialog(
+              title = "Insufficient traning data",
+              "Please feed at least two training dataset and try again.",
+              easyClose = TRUE
+            )
+          )
+        }else{
+          showModal(
+            modalDialog(
+              title = "Error in cluster formation",
+              "More cluster requested than available distinct data points. Please request less clusters.",
+              easyClose = TRUE
+            )
+          ) 
+        }
+        
+        return(NULL)
+      }else if (raga_counter < 2) {
+        showModal(
+          modalDialog(
+            title = "Insufficient traning data",
+            "Please feed at least two training dataset and try again.",
+            easyClose = TRUE
+          )
+        )
+        
+        return(NULL)
+      }else{
+        # Show loader modal
+        showModal(modalDialog(
+          tags$div(id = "loader-div",
+                   tags$div("Graph rendering is in progress..."),
+                   tags$img(id = "loader-img", src = "images/loading.gif")
+          ),
+          footer = NULL
+        ))
       
-      #dicarding observations with the NA
-      binded_data <- na.omit(feature_data_frame)
-      
-      #collecting raga file names
-      raga_file_names <- select(binded_data, raga_file_name)
-      
-      #removing raga_file_name(text) from data frame before passing it to the kmeans algorithm
-      binded_data <- select(binded_data,-raga_file_name)
-      
-      #kmeans function call
-      km1 = kmeans(binded_data, input$number_of_clusters, nstart = 2)
-      
-      #factoring the feature data frame for plotting purpose
-      tmp_f = fa(binded_data, 2, rotate = "none")
-      
-      #collect data for graph plotting
-      tmp_d = data.frame(matrix(ncol = 0, nrow = nrow(binded_data)))
-      tmp_d$cluster = as.factor(km1$cluster)
-      tmp_d$fact_1 = as.numeric(tmp_f$scores[, 1])
-      tmp_d$fact_2 = as.numeric(tmp_f$scores[, 2])
-      tmp_d$label = raga_file_names$raga_file_name
-      
-      #plotting the clustring graph
-      ggplot(tmp_d, aes(fact_1, fact_2, color = cluster)) + geom_point() + geom_text(
-        aes(label = label),
-        size = 3,
-        vjust = 0,
-        hjust = 1,
-        color = "black"
-      )
-    }
-    
+        #dicarding observations with the NA
+        binded_data <- na.omit(feature_data_frame)
+        
+        #collecting raga file names
+        raga_file_names <- select(binded_data, raga_file_name)
+        
+        #removing raga_file_name(text) from data frame before passing it to the kmeans algorithm
+        binded_data <- select(binded_data, -raga_file_name)
+        
+        #kmeans function call
+        km1 = kmeans(binded_data, input$number_of_clusters, nstart = 2)
+        
+        #factoring the feature data frame for plotting purpose
+          factored_data = fa(binded_data, 2, rotate = "none")
+          
+          #------- START: collect data for graph plotting: latent variable exploratory factor analysis -----#
+          
+          #defining the dataframe columns*row
+          factored_data_frame = data.frame()
+          factored_data_frame = data.frame(matrix(ncol = 0, nrow = nrow(binded_data)))
+          
+          #collecting number of clusters
+          factored_data_frame$cluster = as.factor(km1$cluster)
+          
+          #collecting data for factor_1(x-axis)
+          factored_data_frame$factor_1 = as.numeric(factored_data$scores[, 1])
+          
+          #collecting data for factor_2(y-axis)
+          factored_data_frame$factor_2 = as.numeric(factored_data$scores[, 2])
+          
+          #collecting plotting point lable(raga file name)
+          factored_data_frame$label = raga_file_names$raga_file_name
+          
+          #------- END: collect data for graph plotting: latent variable exploratory factor analysis -----#
+          
+          # To close loader modal
+          removeModal()
+          
+          return(factored_data_frame)
+        }
+      }
   })
   #----------------------------------------------------------------------------#
   #*********                END: K-means rendering                    *********#
@@ -139,22 +238,31 @@ shinyServer(function(input, output) {
   
   
   #----------------------------------------------------------------------------#
+  #*********                START: Cluster table                    *********#
+  #----------------------------------------------------------------------------#
+  
+  output$clusterTable <- renderDataTable({
+    factored_data_frame <- dataProcessingAndTransformation()
+    
+    if(is.null(factored_data_frame)){
+      return(NULL)
+    }else{
+      return(factored_data_frame)
+    }
+  })
+  
+  
+  #----------------------------------------------------------------------------#
+  #*********                END: Cluster table                    *********#
+  #----------------------------------------------------------------------------#
+  
+  #----------------------------------------------------------------------------#
   #*********  START: Process monowave, extract and store features     *********#
   #----------------------------------------------------------------------------#
-  featureExtractionAndTransformation <- function(monoWave) {
+  featureExtractionAndTransformation <- function(monoWave, raga_counter) {
     if (is.null(monoWave)) {
       return(NULL)
     } else{
-      #getting the max id
-      raga_counter <-
-        dbGetQuery(conn, "SELECT MAX(id) as counter FROM features_data")
-      
-      if (is.na(raga_counter$counter)) {
-        raga_counter <- 1
-      } else{
-        raga_counter <- (raga_counter$counter + 1)
-      }
-      
       #--------  START : MFCC feature extraction  --------------------#
       
       #fetching the existing mfcc features data
@@ -210,7 +318,7 @@ shinyServer(function(input, output) {
           !is.null(minimized_zcr_data_frame)) {
         #removing the raga_file_name column as it will be redudant after binding columns
         minimized_zcr_data_frame <-
-          select(minimized_zcr_data_frame,-raga_file_name)
+          select(minimized_zcr_data_frame, -raga_file_name)
         
         #binding mfcc and zcr data frames by columns
         current_feature_data_frame = cbind(minimized_melfc_data_frame,
@@ -229,7 +337,6 @@ shinyServer(function(input, output) {
         
         saveData(current_feature_data_frame, features_data_table)
       }
-      
       return(combined_features_data)
     }
   }
@@ -329,7 +436,6 @@ shinyServer(function(input, output) {
   
   
   
-  
   #----------------------------------------------------------------------------#
   #*********        START: Feature extraction from the database       *********#
   #----------------------------------------------------------------------------#
@@ -340,9 +446,10 @@ shinyServer(function(input, output) {
       dbGetQuery(conn, paste0("SELECT * FROM ", table_name, ";"))
     
     #removing id field from the data frame
-    trimmed_features_data <- select(features_data,-id)
+    trimmed_features_data <- select(features_data, -id)
     
     return(trimmed_features_data)
   }
   #********* END: Feature extraction from the database                ********#
+
 })
