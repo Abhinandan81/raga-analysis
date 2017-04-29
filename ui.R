@@ -15,7 +15,6 @@ shinyUI(fluidPage(theme = shinytheme("paper"),
                     "Raga Analysis",
                     
                     tabPanel("Home",
-                             
                              sidebarLayout(
                                sidebarPanel(
                                  fileInput(

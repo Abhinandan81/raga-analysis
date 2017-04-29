@@ -125,7 +125,52 @@ shinyServer(function(input, output) {
   #----------------------------------------------------------------------------#
   #*********              START: K-means rendering                    *********#
   #----------------------------------------------------------------------------#
+  
+  
+  
+  #----------------------------------------------------------------------------#
+  #*********                START: Cluster table                    *********#
+  #----------------------------------------------------------------------------#
+  
+  output$clusterTable <- renderDataTable({
+    factored_data_frame <- dataProcessingAndTransformation()
+    
+    
+    
+    if(is.null(factored_data_frame)){
+      return(NULL)
+    }else{
+      transformed_data_frame <- select(factored_data_frame, cluster, label)
+      
+      colnames(transformed_data_frame) <- c("Cluster number", "Raga file name")
+      return(transformed_data_frame)
+    }
+  })
+  
+  
+  #----------------------------------------------------------------------------#
+  #*********                END: Cluster table                    *********#
+  #----------------------------------------------------------------------------#
+  
+  
+  
+  #----------------------------------------------------------------------------#
+  #*********            START: Data processing and Transformation     *********#
+  #----------------------------------------------------------------------------#
   dataProcessingAndTransformation <- reactive({
+    
+    if(!is.null(isolate(input$raga_file))){
+      # Show loader modal
+      showModal(modalDialog(
+        tags$div(id = "loader-div",
+                 tags$div("Graph rendering is in progress..."),
+                 tags$img(id = "loader-img", src = "images/loading.gif")
+        ),
+        footer = NULL
+      ))
+    }
+    
+    
     #getting processed_feature_data_frame
     processed_feature_data_frame <- getMonoWaveFromRagaFile()
     
@@ -152,8 +197,8 @@ shinyServer(function(input, output) {
         if(raga_counter == 1){
           showModal(
             modalDialog(
-              title = "Insufficient traning data",
-              "Please feed at least two training dataset and try again.",
+              title = "Insufficient reference data",
+              "Please feed at least two reference datasets and try again.",
               easyClose = TRUE
             )
           )
@@ -179,16 +224,7 @@ shinyServer(function(input, output) {
         
         return(NULL)
       }else{
-        # Show loader modal
-        showModal(modalDialog(
-          tags$div(id = "loader-div",
-                   tags$div("Graph rendering is in progress..."),
-                   tags$img(id = "loader-img", src = "images/loading.gif")
-          ),
-          footer = NULL
-        ))
-      
-        #dicarding observations with the NA
+        #discarding observations with the NA
         binded_data <- na.omit(feature_data_frame)
         
         #collecting raga file names
@@ -200,13 +236,15 @@ shinyServer(function(input, output) {
         #kmeans function call
         km1 = kmeans(binded_data, input$number_of_clusters, nstart = 2)
         
+        # print("===========  km1  =================")
+        # print(km1)
+        
         #factoring the feature data frame for plotting purpose
           factored_data = fa(binded_data, 2, rotate = "none")
           
           #------- START: collect data for graph plotting: latent variable exploratory factor analysis -----#
           
           #defining the dataframe columns*row
-          factored_data_frame = data.frame()
           factored_data_frame = data.frame(matrix(ncol = 0, nrow = nrow(binded_data)))
           
           #collecting number of clusters
@@ -231,30 +269,11 @@ shinyServer(function(input, output) {
       }
   })
   #----------------------------------------------------------------------------#
-  #*********                END: K-means rendering                    *********#
+  #*********          END: Data processing and Transformation         *********#
   #----------------------------------------------------------------------------#
   
   
   
-  
-  #----------------------------------------------------------------------------#
-  #*********                START: Cluster table                    *********#
-  #----------------------------------------------------------------------------#
-  
-  output$clusterTable <- renderDataTable({
-    factored_data_frame <- dataProcessingAndTransformation()
-    
-    if(is.null(factored_data_frame)){
-      return(NULL)
-    }else{
-      return(factored_data_frame)
-    }
-  })
-  
-  
-  #----------------------------------------------------------------------------#
-  #*********                END: Cluster table                    *********#
-  #----------------------------------------------------------------------------#
   
   #----------------------------------------------------------------------------#
   #*********  START: Process monowave, extract and store features     *********#
@@ -265,7 +284,7 @@ shinyServer(function(input, output) {
     } else{
       #--------  START : MFCC feature extraction  --------------------#
       
-      #fetching the existing mfcc features data
+      #fetching the existing features data
       existing_feature_data <-
         fetchFetureData(features_data_table)
       
@@ -273,6 +292,7 @@ shinyServer(function(input, output) {
       new_melfc_data_frame <-
         mfccFeatureProcessing(monoWave)
       
+      #adding raga_file_name to the new_melfc_data_frame
       new_melfc_data_frame["raga_file_name"] <-
         isolate(input$raga_file$name)
       
@@ -327,7 +347,7 @@ shinyServer(function(input, output) {
         return(NULL)
       }
       
-      #combining existing_mfcc_feature_data and new_melfc_data_frame
+      #combining existing_feature_data and current_feature_data_frame
       combined_features_data <-
         bind_rows(existing_feature_data, current_feature_data_frame)
       
