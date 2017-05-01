@@ -35,20 +35,15 @@ shinyServer(function(input, output) {
   #********* START: reactive function to detect the file upload change ********#
   #----------------------------------------------------------------------------#
   getMonoWaveFromRagaFile <- reactive({
+    
     #storing the uploaded file
     ragaFile <- input$raga_file
     
     #If recived file is empty return NULL
     if (is.null(ragaFile)) {
-      return(list("feature_data_frame" = NULL, "raga_counter" = 0))
+      return(list("feature_data_frame" = NULL, "raga_counter" = 0, "invalid_file" = 0))
     } else{
-      #validating the file type - application will throw an error if fle type is other than .wav or .mp3
-      validate(need(
-        file_ext(ragaFile$name) %in% c('wav',
-                                       'mp3'),
-        "Please provide valid .wav or .mp3 file."
-      ))
-      
+
       #get the raga counter
       raga_counter <- dbGetQuery(conn, "SELECT MAX(id) as counter FROM features_data")
       
@@ -59,6 +54,7 @@ shinyServer(function(input, output) {
       }
       
       if (file_ext(ragaFile$name) == "mp3") {
+        
         #changing file name in the temporary direcctory
         file.rename(ragaFile$datapath,
                     paste(ragaFile$datapath, ".mp3", sep = ""))
@@ -80,8 +76,9 @@ shinyServer(function(input, output) {
         feature_data_frame <-
           featureExtractionAndTransformation(monoWave, raga_counter)
         
-        return(list("feature_data_frame" = feature_data_frame, "raga_counter" = raga_counter))
-      } else{
+        return(list("feature_data_frame" = feature_data_frame, "raga_counter" = raga_counter, "invalid_file" = 0))
+      } else if (file_ext(ragaFile$name) == "wav") {
+        
         #changing file name in the temporary direcctory
         file.rename(ragaFile$datapath,
                     paste(ragaFile$datapath, ".wav", sep = ""))
@@ -96,7 +93,9 @@ shinyServer(function(input, output) {
         feature_data_frame <-
           featureExtractionAndTransformation(monoWave, raga_counter)
         
-        return(list("feature_data_frame" = feature_data_frame, "raga_counter" = raga_counter))
+        return(list("feature_data_frame" = feature_data_frame, "raga_counter" = raga_counter, "invalid_file" = 0))
+      }else{
+        return(list("feature_data_frame" = NULL, "raga_counter" = raga_counter, "invalid_file" = 1))
       }
     }
   })
@@ -171,13 +170,22 @@ shinyServer(function(input, output) {
     
     #getting processed_feature_data_frame
     processed_feature_data_frame <- getMonoWaveFromRagaFile()
-    
+
     feature_data_frame <- processed_feature_data_frame$feature_data_frame
-    raga_counter <-processed_feature_data_frame$raga_counter
+    raga_counter <- processed_feature_data_frame$raga_counter
+    invalid_file_status <- processed_feature_data_frame$invalid_file
     
     if (is.null(feature_data_frame)) {
       
-      if(raga_counter !=0 ){
+      if(invalid_file_status == 1){
+        showModal(
+          modalDialog(
+            title = "Invalid input file",
+            "Please provide valid .wav or .mp3 file.",
+            easyClose = TRUE
+          )
+        )
+      }else if(raga_counter != 0 ){
         showModal(
           modalDialog(
             title = "No data found",
