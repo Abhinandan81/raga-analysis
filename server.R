@@ -11,8 +11,6 @@ library(ggplot2)
 library(reshape2)
 library(psych)
 
-
-
 #----------------------------------------------------------------------------#
 #**********       START: Database Initilization                 *************#
 #----------------------------------------------------------------------------#
@@ -282,11 +280,11 @@ shinyServer(function(input, output) {
     if (is.null(monoWave)) {
       return(NULL)
     } else{
-      #--------  START : MFCC feature extraction  --------------------#
-      
       #fetching the existing features data
       existing_feature_data <-
         fetchFetureData(features_data_table)
+      
+      #--------  START : MFCC feature extraction  --------------------#
       
       #collecting MFCC features of the newly uploaded file
       new_melfc_data_frame <-
@@ -317,7 +315,7 @@ shinyServer(function(input, output) {
       
       #--------  START : Zero crossing rate feature extraction  -------#
       
-      #collecting MFCC features of the newly uploaded file
+      #collecting ZCR features of the newly uploaded file
       new_zcr_data_frame <-
         zcrFeatureProcessing(monoWave)
       
@@ -330,19 +328,41 @@ shinyServer(function(input, output) {
       
       #--------  END : Zero crossing rate feature extraction  -------#
       
+      #--------  START : spec feature extraction  -------#
+      new_spec_data_frame <- specFeatureProcessing(monoWave)
+      
+      new_spec_data_frame["raga_file_name"] <-
+        isolate(input$raga_file$name)
+      
+      minimized_spec_data_frame <-
+      new_spec_data_frame %>% group_by(raga_file_name) %>%
+      summarise(spec_x =  mean(x, na.rm = TRUE),
+              spec_y =  mean(y, na.rm = TRUE))
+
+      #--------  END : spec feature extraction  -------#
+      
+      #--------  START : spec properties feature extraction  -------#
+      new_spec_prop_data_frame <- specpropFeatureProcessing(monoWave)
+      spec_prop_data_frame <- data.frame(spec_prop = new_spec_prop_data_frame)
+      #--------  END : spec properties feature extraction  -------#
       
       #initilizing the feature_data_frame
       current_feature_data_frame <- data.frame()
       
-      if (!is.null(minimized_melfc_data_frame) &&
-          !is.null(minimized_zcr_data_frame)) {
+      if (!is.null(minimized_melfc_data_frame) && !is.null(minimized_zcr_data_frame) && 
+          !is.null(minimized_spec_data_frame) && !is.null(spec_prop_data_frame)) {
+        
         #removing the raga_file_name column as it will be redudant after binding columns
         minimized_zcr_data_frame <-
           select(minimized_zcr_data_frame, -raga_file_name)
         
+        #removing the raga_file_name column as it will be redudant after binding columns
+        minimized_spec_data_frame <-
+          select(minimized_spec_data_frame, -raga_file_name)
+        
         #binding mfcc and zcr data frames by columns
         current_feature_data_frame = cbind(minimized_melfc_data_frame,
-                                           minimized_zcr_data_frame)
+                                           minimized_zcr_data_frame, minimized_spec_data_frame, spec_prop_data_frame)
       } else{
         return(NULL)
       }
@@ -437,6 +457,25 @@ shinyServer(function(input, output) {
   #********* END: Extract and store the ZCR feature data          *************#
   
   
+  #----------------------------------------------------------------------------#
+  #*********        START: Extract the spec feature data          *************#
+  #----------------------------------------------------------------------------#
+  specFeatureProcessing <- function(raga_mono_wave){
+    spec_feature <- spec(raga_mono_wave,f=22050,plot=FALSE)
+    spec_feature <- as.data.frame(spec_feature)
+    return(spec_feature)
+  }
+  #*********        END: Extract the spec feature data          **************#
+  
+  #----------------------------------------------------------------------------#
+  #**********    START: Extract the spec properties feature data **************#
+  #----------------------------------------------------------------------------#
+    specpropFeatureProcessing <- function(raga_mono_wave){
+    a<-meanspec(raga_mono_wave,f=22050,plot=FALSE)
+    specprop_data <- specprop(a,f=22050)
+    return(specprop_data$mean)
+  }
+  #**********    END: Extract the spec properties feature data **************#
   
   
   #----------------------------------------------------------------------------#
