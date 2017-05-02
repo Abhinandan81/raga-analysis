@@ -230,6 +230,7 @@ shinyServer(function(input, output) {
         
         return(NULL)
       }else{
+        
         #discarding observations with the NA
         binded_data <- na.omit(feature_data_frame)
         
@@ -238,6 +239,8 @@ shinyServer(function(input, output) {
         
         #removing raga_file_name(text) from data frame before passing it to the kmeans algorithm
         binded_data <- select(binded_data, -raga_file_name)
+       
+        #cor(binded_data, use="pairwise.complete.obs")
         
         #kmeans function call
         km1 = kmeans(binded_data, input$number_of_clusters, nstart = 2)
@@ -246,7 +249,7 @@ shinyServer(function(input, output) {
         # print(km1)
         
         #factoring the feature data frame for plotting purpose
-          factored_data = fa(binded_data, 2, rotate = "none")
+          factored_data = fa(binded_data, 2, rotate = "none", use="pairwise.complete.obs")
           
           #------- START: collect data for graph plotting: latent variable exploratory factor analysis -----#
           
@@ -350,10 +353,9 @@ shinyServer(function(input, output) {
       #--------  END : spec feature extraction  -------#
       
       #--------  START : spec properties feature extraction  -------#
-      new_spec_prop_data_frame <- specpropFeatureProcessing(monoWave)
-      spec_prop_data_frame <- data.frame(spec_prop = new_spec_prop_data_frame)
+      spec_prop_data_frame <- specpropFeatureProcessing(monoWave)
       #--------  END : spec properties feature extraction  -------#
-      
+
       #initilizing the feature_data_frame
       current_feature_data_frame <- data.frame()
       
@@ -481,7 +483,22 @@ shinyServer(function(input, output) {
     specpropFeatureProcessing <- function(raga_mono_wave){
     a<-meanspec(raga_mono_wave,f=22050,plot=FALSE)
     specprop_data <- specprop(a,f=22050)
-    return(specprop_data$mean)
+    
+    specprop_feature_data_frame <- data.frame( mean     = specprop_data$mean,    
+                                               sd       = specprop_data$sd      ,
+                                               median   = specprop_data$median  ,
+                                               sem      = specprop_data$sem     ,
+                                               mode     = specprop_data$mode    ,
+                                               Q25      = specprop_data$Q25     ,
+                                               Q75      = specprop_data$Q75     ,
+                                               IQR      = specprop_data$IQR     ,
+                                               cent     = specprop_data$cent    ,
+                                               skewness = specprop_data$skewness,
+                                               kurtosis = specprop_data$kurtosis,
+                                               sfm      = specprop_data$sfm     ,
+                                               sh       = specprop_data$sh )
+
+    return(specprop_feature_data_frame)
   }
   #**********    END: Extract the spec properties feature data **************#
   
